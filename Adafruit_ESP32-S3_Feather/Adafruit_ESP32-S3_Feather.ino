@@ -1,5 +1,4 @@
 #include <WiFi.h>
-int sensorNumber = 1;
 
 #include "mqtt.h"
 #include "sensors.h"
