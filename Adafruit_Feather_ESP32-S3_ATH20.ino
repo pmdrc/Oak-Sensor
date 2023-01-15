@@ -1,24 +1,27 @@
-#include <Adafruit_AHTX0.h>
 #include <WiFi.h>
-#include <Adafruit_NeoPixel.h>
-#include "Adafruit_LC709203F.h"
-#include <PubSubClient.h>
-#include <ArduinoJson.h>
+
+#include "mqtt.h"
+#include "sensors.h"
 #include "secrets.h"
 
-Adafruit_LC709203F lc;
-Adafruit_AHTX0 aht;
+#include "Adafruit_NeoPixel.h"
+#include "Adafruit_LC709203F.h"
 
-// How many internal neopixels do we have? some boards have more than one!
-#define NUMPIXELS        1
-Adafruit_NeoPixel pixels(NUMPIXELS, PIN_NEOPIXEL, NEO_GRB + NEO_KHZ800);
-
-// char ssid[]     = "MySSID";
-// char password[] = "WiFiPass";
-
+#define NUMPIXELS      1
 #define uS_TO_S_FACTOR 1000000ULL  /* Conversion factor for micro seconds to seconds */
 #define TIME_TO_SLEEP  300        /* Time ESP32 will go to sleep (in seconds) */
+#define WAIT_FOR_WIFI  5
+#define WAIT_FOR_MQTT  5
+#define DEBUGME        1
 
+// Battery Gauge Monitor
+Adafruit_LC709203F lc;
+// How many internal neopixels do we have? some boards have more than one!
+Adafruit_NeoPixel pixels(NUMPIXELS, PIN_NEOPIXEL, NEO_GRB + NEO_KHZ800);
+
+// Variables defined in secrets.h
+// char ssid[]     = "MySSID";
+// char password[] = "WiFiPass";
 // const char* mqttServer = "192.168.10.3"; // The IP of your MQTT broker
 // const int mqttPort = 1883;
 // const char* mqttUser = "homeassistant";
@@ -27,7 +30,6 @@ Adafruit_NeoPixel pixels(NUMPIXELS, PIN_NEOPIXEL, NEO_GRB + NEO_KHZ800);
 int sensorNumber = 1;
 String mqttName = "Room sensor" + String(sensorNumber);
 String stateTopic = "home/rooms/" + String(sensorNumber) + "/state";
-//#define DEBUGME         1
 
 WiFiClient wifiClient;
 // Setup the MQTT client class by passing in the WiFi client and MQTT server and login details.
@@ -39,96 +41,131 @@ void printme(const char* text) {
 #endif
 }
 
-void setup() {
+void setup() 
+  {
   bool status;
-
   // Turn on any internal power switches for TFT, NeoPixels, I2C, etc!
   enableInternalPower();
   // set color to red 
   pixels.fill(0xFFFFFF);
   pixels.show();
-  
-#if defined(DEBUGME) 
+  delay(50);
+  #if defined(DEBUGME) 
   Serial.begin(115200);
   while (!Serial) {
     delay(100); // wait for serial port to connect. Needed for native USB port only
-  }  
-#endif
-  pixels.fill(0xFF0000);
-  pixels.show();
-  delay(10);
+  }
+  #endif
   if (!lc.begin()) {
     printme("Couldnt find Adafruit LC709203F?\nMake sure a battery is plugged in!\n");
   }
   else {
     lc.setPackSize(LC709203F_APA_1000MAH);
-//    lc.setAlarmVoltage(3.8);
+    //lc.setAlarmVoltage(3.8);
   }
   delay(10);
-  while((status=aht.begin())==false) {
+  if ((status=aht.begin())==false) {
     printme("Could not find AHT? Check wiring\n");
     delay(1000);
   }
-  printme("AHT10 or AHT20 found\n");
+  else {
+    printme("AHT10 or AHT20 found\n");
+  }
 
   // WIFI ============================== We start by connecting to a WiFi network
   pixels.fill(0xFF00FF); // LED MAGENTA
   pixels.show();
-
   printme("n\Connecting to ");
   printme(ssid);
-
   WiFi.begin(ssid, password);
-
+  uint32_t t1 = millis();
+  bool wifi_timeout=false;
   while (WiFi.status() != WL_CONNECTED) {
     printme(".");
-#if defined(DEBUGME)   
+    #if defined(DEBUGME)   
     Serial.print(WiFi.status());
-#endif
-    delay(50);
+    #endif
+    if (millis() - t1 > WAIT_FOR_WIFI * 1000)
+    {
+      printme("Timeout connecting to WiFi.\n");
+      wifi_timeout = true;
+      break;
+    }
+    delay(20);
   }
-  WiFi.setAutoReconnect(true);
-  WiFi.persistent(true);
 
+  if (wifi_timeout)
+  {
+    disableInternalPower();
+    delay(100);
+    esp_sleep_enable_timer_wakeup(TIME_TO_SLEEP * uS_TO_S_FACTOR);
+    printme("Going to sleep now");
+    esp_deep_sleep_start(); 
+  }
+  else
+  {
+    WiFi.setAutoReconnect(true);
+    WiFi.persistent(true);
+    #if defined(DEBUGME)
+    printme("\n");
+    printme("WiFi connected\n");
+    printme("IP address: ");
+    Serial.println(WiFi.localIP());
+    #endif
+  }
+
+  // MQTT =================================================================
   pixels.fill(0x0000FF); // set LED to blue
   pixels.show();
-  
-#if defined(DEBUGME)
-  printme("\n");
-  printme("WiFi connected\n");
-  printme("IP address: ");
-  Serial.println(WiFi.localIP());
-#endif
-
-// MQTT =====================================
- client.setServer(mqttServer, mqttPort);
-
+  client.setServer(mqttServer, mqttPort);
   printme("Connecting to MQTT");
-
-  while (!client.connected()) {
+  uint32_t t2 = millis();
+  bool mqtt_timeout=false;
+  while (!client.connected())
+  {
     printme(".");
-
-    if (client.connect(mqttName.c_str(), mqttUser, mqttPassword)) {
-      printme("Connected to MQTT\n");
-      sendMQTTTemperatureDiscoveryMsg();
-      sendMQTTHumidityDiscoveryMsg();
-      sendMQTTMoistureDiscoveryMsg();
-    } else {
-      printme("failed with state ");
-#if defined(DEBUGME)
-      Serial.println(client.state());
-#endif
-      delay(200);
+    if (millis() - t2 > WAIT_FOR_MQTT * 1000)
+    {
+      printme("Timeout connecting to MQTT.\n");
+      mqtt_timeout = true;
+      break;
     }
+    delay(20);
   }
-// READ SENSORs ============================== 
+  if (mqtt_timeout)
+  {
+    disableInternalPower();
+    delay(100);
+    esp_sleep_enable_timer_wakeup(TIME_TO_SLEEP * uS_TO_S_FACTOR);
+    printme("Going to sleep now");
+    esp_deep_sleep_start(); 
+  }
+  else
+  {
+    if (client.connect(mqttName.c_str(), mqttUser, mqttPassword)) 
+    {
+      printme("Connected to MQTT\n");
+        sendMQTTTemperatureDiscoveryMsg();
+        sendMQTTHumidityDiscoveryMsg();
+        sendMQTTMoistureDiscoveryMsg();
+      } 
+      else 
+      {
+        printme("failed with state ");
+        #if defined(DEBUGME)
+        Serial.println(client.state());
+        #endif
+      }
+  }
+
+// READ SENSORs ============================================== 
   sensors_event_t humidity, temp;
 
   pixels.fill(0x00FF00);   // turn green
   pixels.show();
   aht.getEvent(&humidity, &temp);// populate temp and humidity objects with fresh data
 
-#if defined(DEBUGME) 
+  #if defined(DEBUGME) 
   Serial.print("Temperature: "); 
   Serial.print(temp.temperature);
   Serial.println(" degrees C");
@@ -144,27 +181,30 @@ void setup() {
   Serial.print("\t");
   Serial.print("Batt_Temp:");
   Serial.println(lc.getCellTemperature(), 1);
-#endif 
+  #endif 
 
-  if (WiFi.status() == WL_CONNECTED) {
 
 // MQTT PUBLISH ==============================
-    DynamicJsonDocument doc(1024);
-    char buffer[256];
+  DynamicJsonDocument doc(1024);
+  char buffer[256];
 
-    doc["humidity"] = humidity.relative_humidity;
-    doc["temperature"] = temp.temperature;
-    doc["battery"] = lc.cellPercent();
-    size_t n = serializeJson(doc, buffer);
+  doc["humidity"] = humidity.relative_humidity;
+  doc["temperature"] = temp.temperature;
+  doc["battery"] = lc.cellPercent();
+  size_t n = serializeJson(doc, buffer);
 
-    bool published = client.publish(stateTopic.c_str(), buffer, n);
-    if (published) { printme("Data Sent"); }
+  bool published = client.publish(stateTopic.c_str(), buffer, n);
+  if (published) 
+  { 
+    printme("Data Sent"); 
   }
-  else {
-    printme("WiFi Disconnected\n");
-  }
-
-  delay(100);
+  else
+  {
+    printme("Failed Sending Data"); 
+    pixels.fill(0xFF0000);
+    pixels.show();
+    delay(1000);
+  }  
   client.disconnect();
   LEDoff();
   WiFi.disconnect();  
@@ -233,60 +273,6 @@ void disableInternalPower() {
   pinMode(NEOPIXEL_POWER, OUTPUT);
   digitalWrite(NEOPIXEL_POWER, LOW);
 #endif
-}
-
-void sendMQTTTemperatureDiscoveryMsg() {
-  String discoveryTopic = "homeassistant/sensor/room_sensor_" + String(sensorNumber) + "/temperature/config";
-
-  DynamicJsonDocument doc(1024);
-  char buffer[256];
-
-  doc["name"] = "Room " + String(sensorNumber) + " Temperature";
-  doc["stat_t"]   = stateTopic;
-  doc["unit_of_meas"] = "°C";
-  doc["dev_cla"] = "temperature";
-  doc["frc_upd"] = true;
-  doc["val_tpl"] = "{{ value_json.temperature|default(0) }}";
-
-  size_t n = serializeJson(doc, buffer);
-
-  client.publish(discoveryTopic.c_str(), buffer, n);
-}
-
-void sendMQTTHumidityDiscoveryMsg() {
-  String discoveryTopic = "homeassistant/sensor/room_sensor_" + String(sensorNumber) + "/humidity/config";
-
-  DynamicJsonDocument doc(1024);
-  char buffer[256];
-
-  doc["name"] = "Room " + String(sensorNumber) + " Humidity";
-  doc["stat_t"]   = stateTopic;
-  doc["unit_of_meas"] = "%";
-  doc["dev_cla"] = "humidity";
-  doc["frc_upd"] = true;
-  doc["val_tpl"] = "{{ value_json.humidity|default(0) }}";
-
-  size_t n = serializeJson(doc, buffer);
-
-  client.publish(discoveryTopic.c_str(), buffer, n);
-}
-
-void sendMQTTMoistureDiscoveryMsg() {
-  String discoveryTopic = "homeassistant/sensor/room_sensor_" + String(sensorNumber) + "/battery/config";
-
-  DynamicJsonDocument doc(1024);
-  char buffer[256];
-
-  doc["name"] = "Room " + String(sensorNumber) + " Battery";
-  doc["stat_t"]   = stateTopic;
-  doc["unit_of_meas"] = "%";
-  doc["dev_cla"] = "battery"; 
-  doc["frc_upd"] = true;
-  doc["val_tpl"] = "{{ value_json.battery|default(0) }}";
-
-  size_t n = serializeJson(doc, buffer);
-
-  client.publish(discoveryTopic.c_str(), buffer, n);
 }
 
 
