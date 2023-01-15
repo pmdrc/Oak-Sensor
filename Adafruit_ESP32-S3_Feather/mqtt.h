@@ -6,6 +6,9 @@
 String mqttName = "Room sensor" + String(sensorNumber);
 String stateTopic = "home/rooms/" + String(sensorNumber) + "/state";
 
+// Setup the MQTT client class by passing in the WiFi client and MQTT server and login details.
+PubSubClient client(wifiClient);
+
 void sendMQTTTemperatureDiscoveryMsg() {
   String discoveryTopic = "homeassistant/sensor/room_sensor_" + String(sensorNumber) + "/temperature/config";
 

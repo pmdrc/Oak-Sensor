@@ -1,4 +1,5 @@
 #include <WiFi.h>
+WiFiClient wifiClient;
 
 #include "mqtt.h"
 #include "sensors.h"
@@ -10,9 +11,10 @@
 #define NUMPIXELS      1
 #define uS_TO_S_FACTOR 1000000ULL  /* Conversion factor for micro seconds to seconds */
 #define TIME_TO_SLEEP  300        /* Time ESP32 will go to sleep (in seconds) */
+#define TIME_SLEEP_LOW 3600        /* Time ESP32 will go to sleep (in seconds) */
 #define WAIT_FOR_WIFI  5
 #define WAIT_FOR_MQTT  5
-#define DEBUGME        1
+//#define DEBUGME        1
 
 // Battery Gauge Monitor
 Adafruit_LC709203F lc;
@@ -27,9 +29,6 @@ Adafruit_NeoPixel pixels(NUMPIXELS, PIN_NEOPIXEL, NEO_GRB + NEO_KHZ800);
 // const char* mqttUser = "homeassistant";
 // const char* mqttPassword = "Secret";
 
-WiFiClient wifiClient;
-// Setup the MQTT client class by passing in the WiFi client and MQTT server and login details.
-PubSubClient client(wifiClient);
 
 void printme(const char* text) {
 #if defined(DEBUGME) 
@@ -40,6 +39,8 @@ void printme(const char* text) {
 void setup() 
   {
   bool status;
+  char temp_value[50];
+
   // Turn on any internal power switches for TFT, NeoPixels, I2C, etc!
   enableInternalPower();
   // set color to red 
@@ -51,6 +52,7 @@ void setup()
   while (!Serial) {
     delay(100); // wait for serial port to connect. Needed for native USB port only
   }
+  printme("\nStarting...\n");
   #endif
   if (!lc.begin()) {
     printme("Couldnt find Adafruit LC709203F?\nMake sure a battery is plugged in!\n");
@@ -60,6 +62,15 @@ void setup()
     //lc.setAlarmVoltage(3.8);
   }
   delay(10);
+  if (lc.cellPercent() < 5.0)
+  {
+    Serial.print("Very Low Batt_Percent:");
+    Serial.print(lc.cellPercent(), 1);
+    Serial.print("\n");
+    esp_sleep_enable_timer_wakeup(TIME_SLEEP_LOW * 3 * uS_TO_S_FACTOR);
+    printme("Hybernating 3h");
+    esp_deep_sleep_start(); 
+  }
   if ((status=aht.begin())==false) {
     printme("Could not find AHT? Check wiring\n");
     delay(1000);
@@ -71,8 +82,9 @@ void setup()
   // WIFI ============================== We start by connecting to a WiFi network
   pixels.fill(0xFF00FF); // LED MAGENTA
   pixels.show();
-  printme("n\Connecting to ");
+  printme("Connecting to ");
   printme(ssid);
+  printme("\n");
   WiFi.begin(ssid, password);
   uint32_t t1 = millis();
   bool wifi_timeout=false;
@@ -114,19 +126,34 @@ void setup()
   pixels.fill(0x0000FF); // set LED to blue
   pixels.show();
   client.setServer(mqttServer, mqttPort);
-  printme("Connecting to MQTT");
+  printme("Connecting to MQTT...\n");
   uint32_t t2 = millis();
   bool mqtt_timeout=false;
   while (!client.connected())
   {
     printme(".");
+    if (client.connect(mqttName.c_str(), mqttUser, mqttPassword)) 
+    {
+      printme("Connected to MQTT\n");
+        sendMQTTTemperatureDiscoveryMsg();
+        sendMQTTHumidityDiscoveryMsg();
+        sendMQTTMoistureDiscoveryMsg();
+    } 
+    else 
+    {
+      printme("failed with state ");
+      #if defined(DEBUGME)
+      Serial.println(client.state());
+      #endif
+      printme("\n");
+    }
     if (millis() - t2 > WAIT_FOR_MQTT * 1000)
     {
       printme("Timeout connecting to MQTT.\n");
       mqtt_timeout = true;
       break;
     }
-    delay(20);
+    delay(100);
   }
   if (mqtt_timeout)
   {
@@ -136,24 +163,7 @@ void setup()
     printme("Going to sleep now");
     esp_deep_sleep_start(); 
   }
-  else
-  {
-    if (client.connect(mqttName.c_str(), mqttUser, mqttPassword)) 
-    {
-      printme("Connected to MQTT\n");
-        sendMQTTTemperatureDiscoveryMsg();
-        sendMQTTHumidityDiscoveryMsg();
-        sendMQTTMoistureDiscoveryMsg();
-      } 
-      else 
-      {
-        printme("failed with state ");
-        #if defined(DEBUGME)
-        Serial.println(client.state());
-        #endif
-      }
-  }
-
+  
 // READ SENSORs ============================================== 
   sensors_event_t humidity, temp;
 
@@ -184,19 +194,22 @@ void setup()
   DynamicJsonDocument doc(1024);
   char buffer[256];
 
-  doc["humidity"] = humidity.relative_humidity;
-  doc["temperature"] = temp.temperature;
-  doc["battery"] = lc.cellPercent();
+  snprintf(temp_value,sizeof(temp_value),"%0.0f",humidity.relative_humidity);
+  doc["humidity"] = temp_value;
+  snprintf(temp_value,sizeof(temp_value),"%0.1f",temp.temperature);
+  doc["temperature"] = temp_value;
+  snprintf(temp_value,sizeof(temp_value),"%0.0f",lc.cellPercent());
+  doc["battery"] = temp_value;
   size_t n = serializeJson(doc, buffer);
 
   bool published = client.publish(stateTopic.c_str(), buffer, n);
   if (published) 
   { 
-    printme("Data Sent"); 
+    printme("Data Sent\n"); 
   }
   else
   {
-    printme("Failed Sending Data"); 
+    printme("Failed Sending Data\n"); 
     pixels.fill(0xFF0000);
     pixels.show();
     delay(1000);
@@ -207,8 +220,14 @@ void setup()
   delay(100);
   disableInternalPower();
   delay(100);
+  if (lc.cellPercent() < 10.0)
+  {
+    esp_sleep_enable_timer_wakeup(TIME_SLEEP_LOW * uS_TO_S_FACTOR);
+    printme("Very Low Battery - Hybernating 24h");
+    esp_deep_sleep_start(); 
+  }  
   esp_sleep_enable_timer_wakeup(TIME_TO_SLEEP * uS_TO_S_FACTOR);
-  printme("Going to sleep now");
+  printme("Going to sleep now\n");
   esp_deep_sleep_start();
 
 }
