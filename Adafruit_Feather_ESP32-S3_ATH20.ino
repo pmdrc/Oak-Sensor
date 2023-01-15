@@ -4,6 +4,7 @@
 #include "Adafruit_LC709203F.h"
 #include <PubSubClient.h>
 #include <ArduinoJson.h>
+#include "secrets.h"
 
 Adafruit_LC709203F lc;
 Adafruit_AHTX0 aht;
@@ -12,16 +13,16 @@ Adafruit_AHTX0 aht;
 #define NUMPIXELS        1
 Adafruit_NeoPixel pixels(NUMPIXELS, PIN_NEOPIXEL, NEO_GRB + NEO_KHZ800);
 
-char ssid[]     = "MySSID";
-char password[] = "WiFiPass";
+// char ssid[]     = "MySSID";
+// char password[] = "WiFiPass";
 
 #define uS_TO_S_FACTOR 1000000ULL  /* Conversion factor for micro seconds to seconds */
 #define TIME_TO_SLEEP  300        /* Time ESP32 will go to sleep (in seconds) */
 
-const char* mqttServer = "192.168.10.3"; // The IP of your MQTT broker
-const int mqttPort = 1883;
-const char* mqttUser = "homeassistant";
-const char* mqttPassword = "Secret";
+// const char* mqttServer = "192.168.10.3"; // The IP of your MQTT broker
+// const int mqttPort = 1883;
+// const char* mqttUser = "homeassistant";
+// const char* mqttPassword = "Secret";
 
 int sensorNumber = 1;
 String mqttName = "Room sensor" + String(sensorNumber);
