@@ -1,7 +1,6 @@
 #include "PubSubClient.h"
 #include <ArduinoJson.h>
 
-#define sensorNumber  1
 
 void sendMQTTTemperatureDiscoveryMsg() {
   String discoveryTopic = "homeassistant/sensor/room_sensor_" + String(sensorNumber) + "/temperature/config";

@@ -27,10 +27,6 @@ Adafruit_NeoPixel pixels(NUMPIXELS, PIN_NEOPIXEL, NEO_GRB + NEO_KHZ800);
 // const char* mqttUser = "homeassistant";
 // const char* mqttPassword = "Secret";
 
-
-String mqttName = "Room sensor" + String(sensorNumber);
-String stateTopic = "home/rooms/" + String(sensorNumber) + "/state";
-
 WiFiClient wifiClient;
 // Setup the MQTT client class by passing in the WiFi client and MQTT server and login details.
 PubSubClient client(wifiClient);
