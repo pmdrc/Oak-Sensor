@@ -12,8 +12,8 @@ WiFiClient wifiClient;
 #define uS_TO_S_FACTOR 1000000ULL  /* Conversion factor for micro seconds to seconds */
 #define TIME_TO_SLEEP  300        /* Time ESP32 will go to sleep (in seconds) */
 #define TIME_SLEEP_LOW 3600        /* Time ESP32 will go to sleep (in seconds) */
-#define WAIT_FOR_WIFI  5
-#define WAIT_FOR_MQTT  5
+#define WAIT_FOR_WIFI  10
+#define WAIT_FOR_MQTT  10
 //#define DEBUGME        1
 
 // Battery Gauge Monitor
@@ -30,10 +30,18 @@ Adafruit_NeoPixel pixels(NUMPIXELS, PIN_NEOPIXEL, NEO_GRB + NEO_KHZ800);
 // const char* mqttPassword = "Secret";
 
 
-void printme(const char* text) {
-#if defined(DEBUGME) 
+void printme(const char* text)
+{
+  #if defined(DEBUGME) 
   Serial.print(text);
-#endif
+  #endif
+}
+
+void mysleep(uint64_t mytime)
+{
+  esp_sleep_enable_timer_wakeup(mytime * uS_TO_S_FACTOR);
+  printme("Going to sleep now");
+  esp_deep_sleep_start(); 
 }
 
 void setup() 
@@ -67,13 +75,13 @@ void setup()
     Serial.print("Very Low Batt_Percent:");
     Serial.print(lc.cellPercent(), 1);
     Serial.print("\n");
-    esp_sleep_enable_timer_wakeup(TIME_SLEEP_LOW * 3 * uS_TO_S_FACTOR);
-    printme("Hybernating 3h");
-    esp_deep_sleep_start(); 
+    printme("Hybernating 3h\n");
+    mysleep(TIME_SLEEP_LOW * 3);
   }
   if ((status=aht.begin())==false) {
     printme("Could not find AHT? Check wiring\n");
-    delay(1000);
+    delay(500);
+    mysleep(TIME_TO_SLEEP);
   }
   else {
     printme("AHT10 or AHT20 found\n");
@@ -82,38 +90,14 @@ void setup()
   // WIFI ============================== We start by connecting to a WiFi network
   pixels.fill(0xFF00FF); // LED MAGENTA
   pixels.show();
+  WiFi.setHostname("ESP32-ROOM-1"); 
+  WiFi.mode(WIFI_STA);
   printme("Connecting to ");
   printme(ssid);
   printme("\n");
   WiFi.begin(ssid, password);
-  uint32_t t1 = millis();
-  bool wifi_timeout=false;
-  while (WiFi.status() != WL_CONNECTED) {
-    printme(".");
-    #if defined(DEBUGME)   
-    Serial.print(WiFi.status());
-    #endif
-    if (millis() - t1 > WAIT_FOR_WIFI * 1000)
-    {
-      printme("Timeout connecting to WiFi.\n");
-      wifi_timeout = true;
-      break;
-    }
-    delay(20);
-  }
-
-  if (wifi_timeout)
+   if ( WiFi.waitForConnectResult() == WL_CONNECTED )
   {
-    disableInternalPower();
-    delay(100);
-    esp_sleep_enable_timer_wakeup(TIME_TO_SLEEP * uS_TO_S_FACTOR);
-    printme("Going to sleep now");
-    esp_deep_sleep_start(); 
-  }
-  else
-  {
-    WiFi.setAutoReconnect(true);
-    WiFi.persistent(true);
     #if defined(DEBUGME)
     printme("\n");
     printme("WiFi connected\n");
@@ -121,6 +105,15 @@ void setup()
     Serial.println(WiFi.localIP());
     #endif
   }
+  else
+  {
+    disableInternalPower();
+    delay(100);
+    esp_sleep_enable_timer_wakeup(TIME_TO_SLEEP * uS_TO_S_FACTOR);
+    printme("WIFI FAILED Going to sleep now");
+    esp_deep_sleep_start(); 
+  }
+
 
   // MQTT =================================================================
   pixels.fill(0x0000FF); // set LED to blue
@@ -159,9 +152,7 @@ void setup()
   {
     disableInternalPower();
     delay(100);
-    esp_sleep_enable_timer_wakeup(TIME_TO_SLEEP * uS_TO_S_FACTOR);
-    printme("Going to sleep now");
-    esp_deep_sleep_start(); 
+    mysleep(TIME_TO_SLEEP);
   }
   
 // READ SENSORs ============================================== 
@@ -222,13 +213,10 @@ void setup()
   delay(100);
   if (lc.cellPercent() < 10.0)
   {
-    esp_sleep_enable_timer_wakeup(TIME_SLEEP_LOW * uS_TO_S_FACTOR);
-    printme("Very Low Battery - Hybernating 24h");
-    esp_deep_sleep_start(); 
+    printme("Very Low Battery - Hybernating 1h");
+    mysleep(TIME_SLEEP_LOW);
   }  
-  esp_sleep_enable_timer_wakeup(TIME_TO_SLEEP * uS_TO_S_FACTOR);
-  printme("Going to sleep now\n");
-  esp_deep_sleep_start();
+  mysleep(TIME_TO_SLEEP);
 
 }
 
