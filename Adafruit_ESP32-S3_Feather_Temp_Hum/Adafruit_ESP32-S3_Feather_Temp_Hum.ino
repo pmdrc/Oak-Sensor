@@ -12,8 +12,8 @@ WiFiClient wifiClient;
 #define uS_TO_S_FACTOR 1000000ULL  /* Conversion factor for micro seconds to seconds */
 #define TIME_TO_SLEEP  300        /* Time ESP32 will go to sleep (in seconds) */
 #define TIME_SLEEP_LOW 3600        /* Time ESP32 will go to sleep (in seconds) */
-#define WAIT_FOR_WIFI  10
-#define WAIT_FOR_MQTT  10
+#define WAIT_FOR_WIFI  15
+#define WAIT_FOR_MQTT  15
 //#define DEBUGME        1
 
 // Battery Gauge Monitor

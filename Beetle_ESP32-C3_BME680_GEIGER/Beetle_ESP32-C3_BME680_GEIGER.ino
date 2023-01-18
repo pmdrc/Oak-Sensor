@@ -1,5 +1,7 @@
 #include <EEPROM.h>
-#include "bsec.h"
+#include <bsec.h>
+#include <DFRobot_Geiger.h>
+
 /* Configure the BSEC library with information about the sensor
     18v/33v = Voltage at Vdd. 1.8V or 3.3V
     3s/300s = BSEC operating mode, BSEC_SAMPLE_RATE_LP or BSEC_SAMPLE_RATE_ULP
@@ -18,12 +20,19 @@ const uint8_t bsec_config_iaq[] = {
 };
 
 #define STATE_SAVE_PERIOD	UINT32_C(360 * 60 * 1000) // 360 minutes - 4 times a day
+#define detect_pin 0 // Geiger PIN
 
 // Helper functions declarations
 void checkIaqSensorStatus(void);
 void errLeds(void);
 void loadState(void);
 void updateState(void);
+
+/*!
+   @brief Constructor
+   @param pin   External interrupt pin
+*/
+DFRobot_Geiger  geiger(detect_pin);
 
 // Create an object of the class Bsec
 Bsec iaqSensor;
@@ -38,6 +47,7 @@ void setup(void)
   EEPROM.begin(BSEC_MAX_STATE_BLOB_SIZE + 1); // 1st address for the length
   Serial.begin(115200);
   Wire.begin();
+  geiger.start();
 
   iaqSensor.begin(BME680_I2C_ADDR_PRIMARY, Wire);
   output = "\nBSEC library version " + String(iaqSensor.version.major) + "." + String(iaqSensor.version.minor) + "." + String(iaqSensor.version.major_bugfix) + "." + String(iaqSensor.version.minor_bugfix);
@@ -140,7 +150,17 @@ void loop(void)
   } else {
     checkIaqSensorStatus();
   }
-  delay(30000);
+  Serial.print("\nGeiger Data:\nCPM - nSv/h - uSvh\n");
+  //Predict CPM by falling edge pulse within 3 seconds, the error is ±3CPM
+  Serial.print(geiger.getCPM());
+  Serial.print(" - ");
+  //Get the current nSv/h, if it has been paused, nSv/h is the last value before the pause
+  Serial.print(geiger.getnSvh());
+  Serial.print(" - ");
+  //Get the current μSv/h, if it has been paused, the μSv/h is the last value before the pause
+  Serial.println(geiger.getuSvh());
+  delay(60000);
+
 }
 
 // Helper function definitions

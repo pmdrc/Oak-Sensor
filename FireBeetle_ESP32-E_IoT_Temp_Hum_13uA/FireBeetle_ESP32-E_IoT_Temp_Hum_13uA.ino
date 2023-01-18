@@ -13,7 +13,7 @@ WiFiClient wifiClient;
 #define TIME_TO_SLEEP  300        /* Time ESP32 will go to sleep (in seconds) */
 #define TIME_SLEEP_LOW 3600        /* Time ESP32 will go to sleep (in seconds) */
 #define WAIT_FOR_WIFI  10
-#define WAIT_FOR_MQTT  10
+#define WAIT_FOR_MQTT  15
 //#define DEBUGME        1
 
 #define PIN_NEOPIXEL   5
@@ -50,10 +50,8 @@ void setup()
 
 
   // Turn on any internal power switches for TFT, NeoPixels, I2C, etc!
-  enableInternalPower();
-  // set color to red 
-  pixels.fill(0xFFFFFF);
-  pixels.show();
+ // enableInternalPower();
+  LEDon();
   delay(50);
   #if defined(DEBUGME) 
   Serial.begin(115200);
@@ -85,6 +83,7 @@ void setup()
 
   
     digitalWrite(2, LOW);
+    LEDoff();
     esp_deep_sleep_start();
 
     Serial.println("This should never get printed");
@@ -105,6 +104,7 @@ void setup()
     
     esp_sleep_enable_timer_wakeup(sleeptime);
     digitalWrite(2, LOW);
+    LEDoff();
     esp_deep_sleep_start();
     
     Serial.println("This should never get printed");
@@ -133,10 +133,11 @@ void setup()
   if ((status=aht.begin())==false) {
     printme("Could not find AHT? Check wiring\n");
     delay(100);
-    disableInternalPower();
+ //   disableInternalPower();
     esp_sleep_enable_timer_wakeup(TIME_TO_SLEEP * uS_TO_S_FACTOR);
     printme("Going to sleep now");
     digitalWrite(2, LOW);
+    LEDoff();
     esp_deep_sleep_start(); 
   }
   else {
@@ -146,7 +147,7 @@ void setup()
   // WIFI ============================== We start by connecting to a WiFi network
   pixels.fill(0xFF00FF); // LED MAGENTA
   pixels.show();
-  WiFi.setHostname("ESP32-ROOM-3"); 
+  WiFi.setHostname("ESP32-ROOM-4"); 
   WiFi.mode(WIFI_STA);
   printme("Connecting to ");
   printme(ssid);
@@ -163,11 +164,12 @@ void setup()
   }
   else
   {
-    disableInternalPower();
+ //   disableInternalPower();
     delay(100);
     esp_sleep_enable_timer_wakeup(TIME_TO_SLEEP * uS_TO_S_FACTOR);
     printme("WIFI FAILED Going to sleep now");
     digitalWrite(2, LOW);
+    LEDoff();
     esp_deep_sleep_start(); 
   }
 
@@ -206,16 +208,19 @@ void setup()
   }
   if (mqtt_timeout)
   {
-    disableInternalPower();
+ //   disableInternalPower();
     delay(100);
     esp_sleep_enable_timer_wakeup(TIME_TO_SLEEP * uS_TO_S_FACTOR);
     printme("Going to sleep now");
     digitalWrite(2, LOW);
+    LEDoff();
     esp_deep_sleep_start(); 
   }
   
 // READ SENSORs ============================================== 
   sensors_event_t humidity, temp;
+  pixels.fill(0x00FF00); // set LED to GREEN
+  pixels.show();
 
   pixels.fill(0x00FF00);   // turn green
   pixels.show();
@@ -256,6 +261,9 @@ void setup()
   bool published = client.publish(stateTopic.c_str(), buffer, n);
   if (published) 
   { 
+    pixels.fill(0xFFFFFF); // set LED to white
+    pixels.show();
+    delay(100);
     printme("Data Sent\n"); 
   }
   else
@@ -269,8 +277,8 @@ void setup()
   LEDoff();
   WiFi.disconnect();  
   delay(100);
-  disableInternalPower();
-  delay(100);
+//  disableInternalPower();
+//  delay(100);
 /*
   if (lc.cellPercent() < 10.0)
   {
@@ -282,8 +290,8 @@ void setup()
   esp_sleep_enable_timer_wakeup(TIME_TO_SLEEP * uS_TO_S_FACTOR);
   printme("Going to sleep now\n");
   digitalWrite(2, LOW);
+  LEDoff();  
   esp_deep_sleep_start();
-
 }
 
 void LEDon() {
