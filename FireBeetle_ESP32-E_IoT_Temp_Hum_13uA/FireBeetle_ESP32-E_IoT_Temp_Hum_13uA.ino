@@ -18,6 +18,7 @@ WiFiClient wifiClient;
 
 #define PIN_NEOPIXEL   5
 
+
 // How many internal neopixels do we have? some boards have more than one!
 Adafruit_NeoPixel pixels(NUMPIXELS, PIN_NEOPIXEL, NEO_GRB + NEO_KHZ800);
 
@@ -41,7 +42,7 @@ void setup()
   bool status;
   char temp_value[50];
 
-  float BatteryVoltage;      //battery voltage in V
+  uint32_t BatteryVoltage;      //battery voltage in V
 
   //visual feedback when we are active, turn on onboard LED
   pinMode(2, OUTPUT);
@@ -64,7 +65,7 @@ void setup()
 
   //read battery voltage
   BatteryVoltage = readBattery();
-  Serial.printf("Voltage: %4.3f V\r\n", BatteryVoltage);
+  Serial.printf("Voltage: %4.3f V\r\n", BatteryVoltage/1000.0);
 
   //a reset is required to wakeup again from below CRITICALLY_LOW_BATTERY_VOLTAGE
   //this is to prevent damaging the empty battery by saving as much power as possible
@@ -131,7 +132,12 @@ void setup()
 */
   if ((status=aht.begin())==false) {
     printme("Could not find AHT? Check wiring\n");
-    delay(1000);
+    delay(100);
+    disableInternalPower();
+    esp_sleep_enable_timer_wakeup(TIME_TO_SLEEP * uS_TO_S_FACTOR);
+    printme("Going to sleep now");
+    digitalWrite(2, LOW);
+    esp_deep_sleep_start(); 
   }
   else {
     printme("AHT10 or AHT20 found\n");
@@ -140,7 +146,7 @@ void setup()
   // WIFI ============================== We start by connecting to a WiFi network
   pixels.fill(0xFF00FF); // LED MAGENTA
   pixels.show();
-  WiFi.setHostname("ESP32-ROOM-2"); 
+  WiFi.setHostname("ESP32-ROOM-3"); 
   WiFi.mode(WIFI_STA);
   printme("Connecting to ");
   printme(ssid);
@@ -161,6 +167,7 @@ void setup()
     delay(100);
     esp_sleep_enable_timer_wakeup(TIME_TO_SLEEP * uS_TO_S_FACTOR);
     printme("WIFI FAILED Going to sleep now");
+    digitalWrite(2, LOW);
     esp_deep_sleep_start(); 
   }
 
@@ -203,6 +210,7 @@ void setup()
     delay(100);
     esp_sleep_enable_timer_wakeup(TIME_TO_SLEEP * uS_TO_S_FACTOR);
     printme("Going to sleep now");
+    digitalWrite(2, LOW);
     esp_deep_sleep_start(); 
   }
   
@@ -241,7 +249,7 @@ void setup()
   doc["humidity"] = temp_value;
   snprintf(temp_value,sizeof(temp_value),"%0.1f",temp.temperature);
   doc["temperature"] = temp_value;
-  snprintf(temp_value,sizeof(temp_value),"%0.2f",BatteryVoltage); //lc.cellPercent());
+  snprintf(temp_value,sizeof(temp_value),"%3u",calc_battery_percentage(BatteryVoltage)); //lc.cellPercent());
   doc["battery"] = temp_value;
   size_t n = serializeJson(doc, buffer);
 

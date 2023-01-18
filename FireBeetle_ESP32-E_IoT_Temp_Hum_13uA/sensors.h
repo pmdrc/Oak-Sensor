@@ -1,9 +1,10 @@
 #include <Adafruit_AHTX0.h>
 #include "esp_adc_cal.h"
-#define LOW_BATTERY_VOLTAGE 3.20
-#define VERY_LOW_BATTERY_VOLTAGE 3.10
-#define CRITICALLY_LOW_BATTERY_VOLTAGE 3.00
-
+#define VOLTAGE_MAX 4200
+#define VOLTAGE_MIN 3300
+#define LOW_BATTERY_VOLTAGE 3200
+#define VERY_LOW_BATTERY_VOLTAGE 3100
+#define CRITICALLY_LOW_BATTERY_VOLTAGE 3000
 Adafruit_AHTX0 aht;
 
 
@@ -15,7 +16,7 @@ Description.: reads the battery voltage through the voltage divider at GPIO34
 Input Value.: -
 Return Value: battery voltage in volts
 ******************************************************************************/
-float readBattery() {
+uint32_t readBattery() {
   uint32_t value = 0;
   int rounds = 11;
   esp_adc_cal_characteristics_t adc_chars;
@@ -42,5 +43,18 @@ float readBattery() {
 
   //due to the voltage divider (1M+1M) values must be multiplied by 2
   //and convert mV to V
-  return esp_adc_cal_raw_to_voltage(value, &adc_chars)*2.0/1000.0;
+  return esp_adc_cal_raw_to_voltage(value, &adc_chars)*2.0;
+}
+
+
+int calc_battery_percentage(uint32_t adc)
+{
+    int battery_percentage = 100 * (adc - VOLTAGE_MIN) / (VOLTAGE_MAX - VOLTAGE_MIN);
+
+    if (battery_percentage < 0)
+        battery_percentage = 0;
+    if (battery_percentage > 100)
+        battery_percentage = 100;
+
+    return battery_percentage;
 }

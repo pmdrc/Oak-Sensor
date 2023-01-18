@@ -1,7 +1,7 @@
 #include "PubSubClient.h"
 #include <ArduinoJson.h>
 
-#define sensorNumber  2
+#define sensorNumber  3
 
 String mqttName = "Room sensor" + String(sensorNumber);
 String stateTopic = "home/rooms/" + String(sensorNumber) + "/state";
@@ -53,7 +53,7 @@ void sendMQTTMoistureDiscoveryMsg() {
 
   doc["name"] = "Room " + String(sensorNumber) + " Battery";
   doc["stat_t"]   = stateTopic;
-  doc["unit_of_meas"] = "V";
+  doc["unit_of_meas"] = "%";
   doc["dev_cla"] = "battery"; 
   doc["frc_upd"] = true;
   doc["val_tpl"] = "{{ value_json.battery|default(0) }}";
