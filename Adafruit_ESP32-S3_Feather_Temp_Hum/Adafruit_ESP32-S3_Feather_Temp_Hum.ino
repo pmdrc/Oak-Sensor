@@ -12,7 +12,7 @@ WiFiClient wifiClient;
 #define uS_TO_S_FACTOR 1000000ULL  /* Conversion factor for micro seconds to seconds */
 #define TIME_TO_SLEEP  300        /* Time ESP32 will go to sleep (in seconds) */
 #define TIME_SLEEP_LOW 3600        /* Time ESP32 will go to sleep (in seconds) */
-#define WAIT_FOR_WIFI  15
+#define WAIT_FOR_WIFI  10
 #define WAIT_FOR_MQTT  15
 //#define DEBUGME        1
 
@@ -41,6 +41,7 @@ void mysleep(uint64_t mytime)
 {
   esp_sleep_enable_timer_wakeup(mytime * uS_TO_S_FACTOR);
   printme("Going to sleep now");
+  LEDoff();
   esp_deep_sleep_start(); 
 }
 
@@ -52,8 +53,7 @@ void setup()
   // Turn on any internal power switches for TFT, NeoPixels, I2C, etc!
   enableInternalPower();
   // set color to red 
-  pixels.fill(0xFFFFFF);
-  pixels.show();
+  LEDon();
   delay(50);
   #if defined(DEBUGME) 
   Serial.begin(115200);
@@ -72,9 +72,11 @@ void setup()
   delay(10);
   if (lc.cellPercent() < 5.0)
   {
+    #if defined(DEBUGME) 
     Serial.print("Very Low Batt_Percent:");
     Serial.print(lc.cellPercent(), 1);
     Serial.print("\n");
+    #endif
     printme("Hybernating 3h\n");
     mysleep(TIME_SLEEP_LOW * 3);
   }
@@ -96,7 +98,7 @@ void setup()
   printme(ssid);
   printme("\n");
   WiFi.begin(ssid, password);
-   if ( WiFi.waitForConnectResult() == WL_CONNECTED )
+  if ( WiFi.waitForConnectResult() == WL_CONNECTED )
   {
     #if defined(DEBUGME)
     printme("\n");
@@ -111,6 +113,7 @@ void setup()
     delay(100);
     esp_sleep_enable_timer_wakeup(TIME_TO_SLEEP * uS_TO_S_FACTOR);
     printme("WIFI FAILED Going to sleep now");
+    LEDoff();
     esp_deep_sleep_start(); 
   }
 
@@ -196,6 +199,9 @@ void setup()
   bool published = client.publish(stateTopic.c_str(), buffer, n);
   if (published) 
   { 
+    pixels.fill(0xFFFFFF); // set LED to white
+    pixels.show();
+    delay(100);  
     printme("Data Sent\n"); 
   }
   else

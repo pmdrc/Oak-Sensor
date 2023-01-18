@@ -219,10 +219,8 @@ void setup()
   
 // READ SENSORs ============================================== 
   sensors_event_t humidity, temp;
-  pixels.fill(0x00FF00); // set LED to GREEN
-  pixels.show();
 
-  pixels.fill(0x00FF00);   // turn green
+  pixels.fill(0x00FF00); // set LED to GREEN
   pixels.show();
   aht.getEvent(&humidity, &temp);// populate temp and humidity objects with fresh data
 
