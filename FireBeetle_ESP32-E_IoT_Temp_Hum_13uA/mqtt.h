@@ -1,7 +1,7 @@
 #include "PubSubClient.h"
 #include <ArduinoJson.h>
 
-#define sensorNumber  4
+#define sensorNumber  2
 
 String mqttName = "Room sensor" + String(sensorNumber);
 String stateTopic = "home/rooms/" + String(sensorNumber) + "/state";

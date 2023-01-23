@@ -6,7 +6,7 @@ WiFiClient wifiClient;
 #include "secrets.h"
 
 #include "Adafruit_NeoPixel.h"
-#include "Adafruit_LC709203F.h"
+// #include "Adafruit_LC709203F.h"
 
 #define NUMPIXELS      1
 #define uS_TO_S_FACTOR 1000000ULL  /* Conversion factor for micro seconds to seconds */
@@ -50,7 +50,7 @@ void setup()
 
 
   // Turn on any internal power switches for TFT, NeoPixels, I2C, etc!
- // enableInternalPower();
+  enableInternalPower();
   LEDon();
   delay(50);
   #if defined(DEBUGME) 
@@ -84,6 +84,7 @@ void setup()
   
     digitalWrite(2, LOW);
     LEDoff();
+    disableInternalPower();
     esp_deep_sleep_start();
 
     Serial.println("This should never get printed");
@@ -105,6 +106,7 @@ void setup()
     esp_sleep_enable_timer_wakeup(sleeptime);
     digitalWrite(2, LOW);
     LEDoff();
+    disableInternalPower();
     esp_deep_sleep_start();
     
     Serial.println("This should never get printed");
@@ -138,6 +140,7 @@ void setup()
     printme("Going to sleep now");
     digitalWrite(2, LOW);
     LEDoff();
+    disableInternalPower();
     esp_deep_sleep_start(); 
   }
   else {
@@ -147,7 +150,7 @@ void setup()
   // WIFI ============================== We start by connecting to a WiFi network
   pixels.fill(0xFF00FF); // LED MAGENTA
   pixels.show();
-  WiFi.setHostname("ESP32-ROOM-4"); 
+  WiFi.setHostname("ESP32-ROOM-2"); 
   WiFi.mode(WIFI_STA);
   printme("Connecting to ");
   printme(ssid);
@@ -170,6 +173,7 @@ void setup()
     printme("WIFI FAILED Going to sleep now");
     digitalWrite(2, LOW);
     LEDoff();
+    disableInternalPower();
     esp_deep_sleep_start(); 
   }
 
@@ -214,6 +218,7 @@ void setup()
     printme("Going to sleep now");
     digitalWrite(2, LOW);
     LEDoff();
+    disableInternalPower();
     esp_deep_sleep_start(); 
   }
   
@@ -289,6 +294,7 @@ void setup()
   printme("Going to sleep now\n");
   digitalWrite(2, LOW);
   LEDoff();  
+  disableInternalPower();
   esp_deep_sleep_start();
 }
 

@@ -1,5 +1,5 @@
 #include <EEPROM.h>
-#include <bsec.h>
+#include <bsec2.h>
 #include <DFRobot_Geiger.h>
 
 /* Configure the BSEC library with information about the sensor
