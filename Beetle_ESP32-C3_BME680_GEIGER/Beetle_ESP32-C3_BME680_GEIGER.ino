@@ -1,259 +1,170 @@
-#include <EEPROM.h>
+/**
+ * Copyright (C) 2021 Bosch Sensortec GmbH
+ *
+ * SPDX-License-Identifier: BSD-3-Clause
+ * The new sensor needs to be conditioned before the example can work reliably. You may run this
+ * example for 24hrs to let the sensor stabilize.
+ *
+ **/
+#include <Geiger.h>
 #include <bsec2.h>
-#include <DFRobot_Geiger.h>
 
-/* Configure the BSEC library with information about the sensor
-    18v/33v = Voltage at Vdd. 1.8V or 3.3V
-    3s/300s = BSEC operating mode, BSEC_SAMPLE_RATE_LP or BSEC_SAMPLE_RATE_ULP
-    4d/28d = Operating age of the sensor in days
-    generic_18v_3s_4d
-    generic_18v_3s_28d
-    generic_18v_300s_4d
-    generic_18v_300s_28d
-    generic_33v_3s_4d
-    generic_33v_3s_28d
-    generic_33v_300s_4d
-    generic_33v_300s_28d
-*/
-const uint8_t bsec_config_iaq[] = {
-#include "config/generic_33v_3s_4d/bsec_iaq.txt"
-};
+/* Macros used */
+#define PANIC_LED   10
+#define ERROR_DUR   1000
 
-#define STATE_SAVE_PERIOD	UINT32_C(360 * 60 * 1000) // 360 minutes - 4 times a day
-#define detect_pin 0 // Geiger PIN
-
-// Helper functions declarations
-void checkIaqSensorStatus(void);
+/* Helper functions declarations */
+/**
+ * @brief : This function toggles the led when a fault was detected
+ */
 void errLeds(void);
-void loadState(void);
-void updateState(void);
 
-/*!
-   @brief Constructor
-   @param pin   External interrupt pin
-*/
-DFRobot_Geiger  geiger(detect_pin);
+/**
+ * @brief : This function checks the BSEC status, prints the respective error code. Halts in case of error
+ * @param[in] bsec  : Bsec2 class object
+ */
+void checkBsecStatus(Bsec2 bsec);
 
-// Create an object of the class Bsec
-Bsec iaqSensor;
-uint8_t bsecState[BSEC_MAX_STATE_BLOB_SIZE] = {0};
-uint16_t stateUpdateCounter = 0;
+/**
+ * @brief : This function is called by the BSEC library when a new output is available
+ * @param[in] input     : BME68X sensor data before processing
+ * @param[in] outputs   : Processed BSEC BSEC output data
+ * @param[in] bsec      : Instance of BSEC2 calling the callback
+ */
+void newDataCallback(const bme68xData data, const bsecOutputs outputs, Bsec2 bsec);
 
-String output;
+/* Create an object of the class Bsec2 */
+Bsec2 envSensor;
 
-// Entry point for the example
+/* Entry point for the example */
 void setup(void)
 {
-  EEPROM.begin(BSEC_MAX_STATE_BLOB_SIZE + 1); // 1st address for the length
-  Serial.begin(115200);
-  Wire.begin();
-  geiger.start();
+    /* Desired subscription list of BSEC2 outputs */
+    bsecSensor sensorList[] = {
+            BSEC_OUTPUT_IAQ,
+            BSEC_OUTPUT_RAW_TEMPERATURE,
+            BSEC_OUTPUT_RAW_PRESSURE,
+            BSEC_OUTPUT_RAW_HUMIDITY,
+            BSEC_OUTPUT_RAW_GAS,
+            BSEC_OUTPUT_STABILIZATION_STATUS,
+            BSEC_OUTPUT_RUN_IN_STATUS
+    };
 
-  iaqSensor.begin(BME680_I2C_ADDR_PRIMARY, Wire);
-  output = "\nBSEC library version " + String(iaqSensor.version.major) + "." + String(iaqSensor.version.minor) + "." + String(iaqSensor.version.major_bugfix) + "." + String(iaqSensor.version.minor_bugfix);
-  Serial.println(output);
-  checkIaqSensorStatus();
+    /* Initialize the communication interfaces */
+    Serial.begin(115200);
+    Wire.begin();
+    pinMode(PANIC_LED, OUTPUT);
 
-  iaqSensor.setConfig(bsec_config_iaq);
-  checkIaqSensorStatus();
+    /* Valid for boards with USB-COM. Wait until the port is open */
+    while(!Serial) delay(10);
+    
+    Serial.println("Starting ... \n");
+    /* Initialize the library and interfaces */
+    if (!envSensor.begin(BME68X_I2C_ADDR_LOW, Wire))
+    {
+        checkBsecStatus(envSensor);
+    }
 
-  loadState();
+    /* Subsribe to the desired BSEC2 outputs */
+    if (!envSensor.updateSubscription(sensorList, ARRAY_LEN(sensorList), BSEC_SAMPLE_RATE_LP))
+    {
+        checkBsecStatus(envSensor);
+    }
 
-  bsec_virtual_sensor_t sensorList[10] = {
-    BSEC_OUTPUT_RAW_TEMPERATURE,
-    BSEC_OUTPUT_RAW_PRESSURE,
-    BSEC_OUTPUT_RAW_HUMIDITY,
-    BSEC_OUTPUT_RAW_GAS,
-    BSEC_OUTPUT_IAQ,
-    BSEC_OUTPUT_STATIC_IAQ,
-    BSEC_OUTPUT_CO2_EQUIVALENT,
-    BSEC_OUTPUT_BREATH_VOC_EQUIVALENT,
-    BSEC_OUTPUT_SENSOR_HEAT_COMPENSATED_TEMPERATURE,
-    BSEC_OUTPUT_SENSOR_HEAT_COMPENSATED_HUMIDITY,
-  };
+    /* Whenever new data is available call the newDataCallback function */
+    envSensor.attachCallback(newDataCallback);
 
-  iaqSensor.updateSubscription(sensorList, 10, BSEC_SAMPLE_RATE_LP);
-  checkIaqSensorStatus();
-
-  // Print the header
-  output = "Timestamp [ms], raw temperature [°C], pressure [hPa], raw relative humidity [%], gas [Ohm], IAQ, IAQ accuracy, temperature [°C], relative humidity [%]";
-//  Serial.println(output);
+    Serial.println("BSEC library version " + \
+            String(envSensor.version.major) + "." \
+            + String(envSensor.version.minor) + "." \
+            + String(envSensor.version.major_bugfix) + "." \
+            + String(envSensor.version.minor_bugfix));
 }
 
-// Function that is looped forever
+/* Function that is looped forever */
 void loop(void)
 {
-  unsigned long time_trigger = millis();
-  if (iaqSensor.run()) { // If new data is available
-    output = String(time_trigger);
-    output += ", " + String(iaqSensor.rawTemperature);
-    output += ", " + String(iaqSensor.pressure);
-    output += ", " + String(iaqSensor.rawHumidity);
-    output += ", " + String(iaqSensor.gasResistance);
-    output += ", " + String(iaqSensor.iaq);
-    output += ", " + String(iaqSensor.iaqAccuracy);
-    output += ", " + String(iaqSensor.temperature);
-    output += ", " + String(iaqSensor.humidity);
-    output += ", " + String(iaqSensor.staticIaq);
-    output += ", " + String(iaqSensor.co2Equivalent);
-    output += ", " + String(iaqSensor.breathVocEquivalent);
-  //  Serial.println(output);
-
-    Serial.print("Temperature = "); 
-    Serial.print(iaqSensor.temperature); 
-    Serial.println(" *C");
-  
-    Serial.print("Pressure = "); 
-    Serial.print(iaqSensor.pressure / 100.0); 
-    Serial.println(" hPa");
-  
-    Serial.print("Humidity = "); 
-    Serial.print(iaqSensor.humidity); 
-    Serial.println(" %");
-  
-    Serial.print("IAQ = "); 
-    Serial.print(iaqSensor.staticIaq); 
-    Serial.println(" PPM");
-  
-    Serial.print("CO2 equiv = "); 
-    Serial.print(iaqSensor.co2Equivalent); 
-    Serial.println(" PPM");
-  
-    Serial.print("Breath VOC = "); 
-    Serial.print(iaqSensor.breathVocEquivalent); 
-    Serial.println(" PPM");
-  
-    if ((iaqSensor.staticIaq > 0)  && (iaqSensor.staticIaq  <= 50)) {
-      Serial.print("IAQ: Good");
+    /* Call the run function often so that the library can 
+     * check if it is time to read new data from the sensor  
+     * and process it.
+     */
+    if (!envSensor.run())
+    {
+        checkBsecStatus(envSensor);
     }
-    if ((iaqSensor.staticIaq > 51)  && (iaqSensor.staticIaq  <= 100)) {
-      Serial.print("IAQ: Average");
-    }
-    if ((iaqSensor.staticIaq > 101)  && (iaqSensor.staticIaq  <= 150)) {
-      Serial.print("IAQ: Little Bad");
-    }
-    if ((iaqSensor.staticIaq > 151)  && (iaqSensor.staticIaq  <= 200)) {
-      Serial.print("IAQ: Bad");
-    }
-    if ((iaqSensor.staticIaq > 201)  && (iaqSensor.staticIaq  <= 300)) {
-      Serial.print("IAQ: Worse");
-    }
-    if ((iaqSensor.staticIaq > 301)  && (iaqSensor.staticIaq  <= 500)) {
-      Serial.print("IAQ: Very Bad");
-    }
-    if ((iaqSensor.staticIaq > 500)){
-      Serial.print("IAQ: Very Very Bad");
-    }
-     Serial.println();
-
-    updateState();
-  } else {
-    checkIaqSensorStatus();
-  }
-  Serial.print("\nGeiger Data:\nCPM - nSv/h - uSvh\n");
-  //Predict CPM by falling edge pulse within 3 seconds, the error is ±3CPM
-  Serial.print(geiger.getCPM());
-  Serial.print(" - ");
-  //Get the current nSv/h, if it has been paused, nSv/h is the last value before the pause
-  Serial.print(geiger.getnSvh());
-  Serial.print(" - ");
-  //Get the current μSv/h, if it has been paused, the μSv/h is the last value before the pause
-  Serial.println(geiger.getuSvh());
-  delay(60000);
-
-}
-
-// Helper function definitions
-void checkIaqSensorStatus(void)
-{
-  if (iaqSensor.status != BSEC_OK) {
-    if (iaqSensor.status < BSEC_OK) {
-      output = "BSEC error code : " + String(iaqSensor.status);
-      Serial.println(output);
-      for (;;)
-        errLeds(); /* Halt in case of failure */
-    } else {
-      output = "BSEC warning code : " + String(iaqSensor.status);
-      Serial.println(output);
-    }
-  }
-
-  if (iaqSensor.bme680Status != BME680_OK) {
-    if (iaqSensor.bme680Status < BME680_OK) {
-      output = "BME680 error code : " + String(iaqSensor.bme680Status);
-      Serial.println(output);
-      for (;;)
-        errLeds(); /* Halt in case of failure */
-    } else {
-      output = "BME680 warning code : " + String(iaqSensor.bme680Status);
-      Serial.println(output);
-    }
-  }
-  iaqSensor.status = BSEC_OK;
 }
 
 void errLeds(void)
 {
-  pinMode(LED_BUILTIN, OUTPUT);
-  digitalWrite(LED_BUILTIN, HIGH);
-  delay(100);
-  digitalWrite(LED_BUILTIN, LOW);
-  delay(100);
+    while(1)
+    {
+        digitalWrite(PANIC_LED, HIGH);
+        delay(ERROR_DUR);
+        digitalWrite(PANIC_LED, LOW);
+        delay(ERROR_DUR);
+    }
 }
 
-void loadState(void)
+void newDataCallback(const bme68xData data, const bsecOutputs outputs, Bsec2 bsec)
 {
-  if (EEPROM.read(0) == BSEC_MAX_STATE_BLOB_SIZE) {
-    // Existing state in EEPROM
-    Serial.println("Reading state from EEPROM");
-
-    for (uint8_t i = 0; i < BSEC_MAX_STATE_BLOB_SIZE; i++) {
-      bsecState[i] = EEPROM.read(i + 1);
-      Serial.println(bsecState[i], HEX);
+    if (!outputs.nOutputs)
+    {
+        return;
     }
 
-    iaqSensor.setState(bsecState);
-    checkIaqSensorStatus();
-  } else {
-    // Erase the EEPROM with zeroes
-    Serial.println("Erasing EEPROM");
-
-    for (uint8_t i = 0; i < BSEC_MAX_STATE_BLOB_SIZE + 1; i++)
-      EEPROM.write(i, 0);
-
-    EEPROM.commit();
-  }
+    Serial.println("BSEC outputs:\n\ttimestamp = " + String((int) (outputs.output[0].time_stamp / INT64_C(1000000))));
+    for (uint8_t i = 0; i < outputs.nOutputs; i++)
+    {
+        const bsecData output  = outputs.output[i];
+        switch (output.sensor_id)
+        {
+            case BSEC_OUTPUT_IAQ:
+                Serial.println("\tiaq = " + String(output.signal));
+                Serial.println("\tiaq accuracy = " + String((int) output.accuracy));
+                break;
+            case BSEC_OUTPUT_RAW_TEMPERATURE:
+                Serial.println("\ttemperature = " + String(output.signal));
+                break;
+            case BSEC_OUTPUT_RAW_PRESSURE:
+                Serial.println("\tpressure = " + String(output.signal));
+                break;
+            case BSEC_OUTPUT_RAW_HUMIDITY:
+                Serial.println("\thumidity = " + String(output.signal));
+                break;
+            case BSEC_OUTPUT_RAW_GAS:
+                Serial.println("\tgas resistance = " + String(output.signal));
+                break;
+            case BSEC_OUTPUT_STABILIZATION_STATUS:
+                Serial.println("\tstabilization status = " + String(output.signal));
+                break;
+            case BSEC_OUTPUT_RUN_IN_STATUS:
+                Serial.println("\trun in status = " + String(output.signal));
+                break;
+            default:
+                break;
+        }
+    }
 }
 
-void updateState(void)
+void checkBsecStatus(Bsec2 bsec)
 {
-  bool update = false;
-  /* Set a trigger to save the state. Here, the state is saved every STATE_SAVE_PERIOD with the first state being saved once the algorithm achieves full calibration, i.e. iaqAccuracy = 3 */
-  if (stateUpdateCounter == 0) {
-    if (iaqSensor.iaqAccuracy >= 3) {
-      update = true;
-      stateUpdateCounter++;
+    if (bsec.status < BSEC_OK)
+    {
+        Serial.println("BSEC error code : " + String(bsec.status));
+        errLeds(); /* Halt in case of failure */
     }
-  } else {
-    /* Update every STATE_SAVE_PERIOD milliseconds */
-    if ((stateUpdateCounter * STATE_SAVE_PERIOD) < millis()) {
-      update = true;
-      stateUpdateCounter++;
-    }
-  }
-
-  if (update) {
-    iaqSensor.getState(bsecState);
-    checkIaqSensorStatus();
-
-    Serial.println("Writing state to EEPROM");
-
-    for (uint8_t i = 0; i < BSEC_MAX_STATE_BLOB_SIZE ; i++) {
-      EEPROM.write(i + 1, bsecState[i]);
-      Serial.println(bsecState[i], HEX);
+    else if (bsec.status > BSEC_OK)
+    {
+        Serial.println("BSEC warning code : " + String(bsec.status));
     }
 
-    EEPROM.write(0, BSEC_MAX_STATE_BLOB_SIZE);
-    EEPROM.commit();
-  }
+    if (bsec.sensor.status < BME68X_OK)
+    {
+        Serial.println("BME68X error code : " + String(bsec.sensor.status));
+        errLeds(); /* Halt in case of failure */
+    }
+    else if (bsec.sensor.status > BME68X_OK)
+    {
+        Serial.println("BME68X warning code : " + String(bsec.sensor.status));
+    }
 }

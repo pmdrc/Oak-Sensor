@@ -16,7 +16,7 @@ WiFiClient wifiClient;
 #define WAIT_FOR_MQTT  15
 //#define DEBUGME        1
 
-#define PIN_NEOPIXEL   5
+#define PIN_NEOPIXEL   2
 
 
 // How many internal neopixels do we have? some boards have more than one!
@@ -150,7 +150,7 @@ void setup()
   // WIFI ============================== We start by connecting to a WiFi network
   pixels.fill(0xFF00FF); // LED MAGENTA
   pixels.show();
-  WiFi.setHostname("ESP32-ROOM-3"); 
+  WiFi.setHostname("ESP32-ROOM-5"); 
   WiFi.mode(WIFI_STA);
   printme("Connecting to ");
   printme(ssid);
